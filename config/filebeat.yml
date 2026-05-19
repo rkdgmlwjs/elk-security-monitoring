@@ -1,0 +1,53 @@
+# ================================ Input ================================
+input {
+  beats {
+    port => 5044
+  }
+}
+
+# ================================ Filter ================================
+filter {
+  grok {
+    match => {
+      "auth_message" => [
+        "Accepted password for %{DATA:logname} from %{IP:src_ip} port %{NUMBER:port} %{GREEDYDATA}",
+        "Failed password for %{DATA:logname} from %{IP:src_ip} port %{NUMBER:port} %{GREEDYDATA}"
+      ]
+    }
+    overwrite => ["logname", "src_ip", "port"]
+  }
+
+  # GeoIP 변환 (접속 IP의 국가/도시 정보)
+  # geoip {
+  #   source   => "src_ip"
+  #   target   => "geoip"
+  #   database => "/usr/share/GeoIP/GeoLite2-City.mmdb"
+  # }
+}
+
+# ================================ Output ================================
+output {
+  elasticsearch {
+    hosts    => ["localhost:9200"]
+    index    => "auth-logs-%{+YYYY.MM.dd}"
+    pipelines:
+      - pipeline: "auth_pipeline"
+  }
+
+  # 로그인 실패 시 이메일 알림
+  if "Failed password" in [message] {
+    email {
+      to             => "your@email.com"
+      from           => "your@naver.com"
+      subject        => "Login Failure Alert on %{host}"
+      body           => "A failed login attempt detected.\nHost: %{hostname}\nMessage: %{auth_message}"
+      address        => "smtp.naver.com"
+      port           => 587
+      username       => "your@naver.com"
+      password       => "앱 전용 비밀번호"   # 네이버 애플리케이션 비밀번호 입력
+      authentication => "plain"
+      use_tls        => true
+      debug          => true
+    }
+  }
+}
